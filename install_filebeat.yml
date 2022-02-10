@@ -1,0 +1,90 @@
+---
+- name: Install filebeat
+  hosts: XXXXX
+  become: true
+  remote_user: ec2-user
+  vars:
+    ansible_ssh_private_key_file: XXXXXX.pem 
+
+  tasks:
+    - name: Adiciona a chave
+      command: rpm --import https://packages.elastic.co/GPG-KEY-elasticsearch
+
+    - name: Adiciona repositorio
+      template:
+        src: /home/ansible/repo/repo.conf.j2
+        dest: /etc/yum.repos.d/elastic.repo
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+
+    - name: Instala o Filebeat
+      command: yum install -y filebeat
+      register: retorno
+
+    - name: Inicia o Filebeat
+      service:
+        name: filebeat
+        state: started
+        enabled: true
+
+    - name: Ativa modulo postgresql
+      command: filebeat modules enable postgresql
+
+    - name: Ativa modulo System
+      command: filebeat modules enable system
+
+    - name: Copia o arquivo de configuracao padrao
+      copy:
+        src: /home/ansible/default_files/filebeat.yml
+        dest: /etc/filebeat/filebeat.yml
+        backup: yes
+
+    - name: Insere o caminho dos logs do postgresql no modulo.
+      lineinfile:
+        path: /etc/filebeat/modules.d/postgresql.yml
+        line: '    var.paths: ["/var/lib/pgsql/13/data/pg_log/*.log*"]'
+
+    - name: Testa as configuracoes do Filebeat
+      command: filebeat test config
+      register: retorno
+
+    - debug:
+       msg: "{{ retorno.stdout }}"
+
+    - name: Reinicia o Filebeat
+      service:
+        name: filebeat
+        state: restarted
+
+    - name: Versao instalada
+      command: filebeat version
+      register: retorno2
+    - debug:
+       msg: "{{ retorno2.stdout }}"
+
+    - name: Altera log timezone
+      command: psql postgres -c "ALTER SYSTEM SET log_timezone = 'UTC';"
+      register: sql
+
+    - debug:
+        msg: "{{ sql.stdout_lines }}"
+
+    - name: Altera log_line_prefix
+      command: psql postgres -c "ALTER SYSTEM SET log_line_prefix = '%m [%p] (%a) [%r] %q%u@%d ';"
+      register: sql2
+
+    - debug:
+        msg: "{{ sql2.stdout_lines }}"
+
+    - name: Reinicia o Postgresql
+      service:
+        name: postgresql-13
+        state: restarted
+
+    - name: Checa se o Postgresql esta executando...
+      service:
+        name: postgresql-13
+        state: started
+...

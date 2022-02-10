@@ -1,0 +1,33 @@
+---
+- hosts: instalar
+  become: true
+  remote_user: ec2-user
+
+  tasks:
+    - name: Adiciona linha pg_hba
+      community.postgresql.postgresql_pg_hba:
+        dest: /var/lib/pgsql/13/data/pg_hba.conf
+        contype: host
+        users: user
+        source: 127.0.0.1/32
+        databases: all
+        method: md5
+        backup: yes
+
+    - name: Restart o Postgresql
+      service:
+        name: postgresql-13
+        state: restarted
+
+    - name: Testa o modulo do Postgresql novamente
+      command: metricbeat test modules postgresql
+      register: retorno3
+
+    - debug:
+        msg: "{{ retorno3.stdout_lines }}"
+
+    - name: Checa o Postgresql
+      service:
+        name: postgresql-13
+        state: started
+...
